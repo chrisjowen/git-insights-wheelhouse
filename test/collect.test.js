@@ -225,7 +225,7 @@ describe('githubArgs', () => {
 		assert.match(query, /^query=query\(/);
 		assert.doesNotMatch(query, /mutation/);
 		assert.ok(
-			args.includes('m30=repo:acme/lumen is:pr is:merged merged:>=2026-10-01 sort:created-desc')
+			args.includes('m30=repo:acme/lumen is:pr is:merged merged:>=2026-10-01 sort:updated-desc')
 		);
 	});
 });

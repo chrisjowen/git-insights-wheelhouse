@@ -415,13 +415,13 @@ export function githubArgs(repo, now) {
 		'graphql',
 		'-f',
 		`query=${GITHUB_QUERY}`,
-		'-F',
+		'-f',
 		`owner=${owner}`,
-		'-F',
+		'-f',
 		`name=${name}`
 	];
 	for (const d of PERIODS) {
-		args.push('-f', `m${d}=repo:${repo} is:pr is:merged merged:>=${since(d)} sort:created-desc`);
+		args.push('-f', `m${d}=repo:${repo} is:pr is:merged merged:>=${since(d)} sort:updated-desc`);
 		args.push('-f', `io${d}=repo:${repo} is:issue created:>=${since(d)}`);
 		args.push('-f', `ic${d}=repo:${repo} is:issue closed:>=${since(d)}`);
 	}

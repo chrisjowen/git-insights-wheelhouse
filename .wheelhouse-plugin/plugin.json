@@ -54,7 +54,7 @@
 			},
 			"includeBots": {
 				"title": "Count bots",
-				"description": "Whether commits and pull requests from bots such as Dependabot count.",
+				"description": "Whether bots such as Dependabot count in commits, contributors and the open pull request list. Merged pull request and issue counts always include them.",
 				"type": "boolean",
 				"default": true
 			}

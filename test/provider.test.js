@@ -109,6 +109,25 @@ describe('the provider', () => {
 		}
 	});
 
+	it('sends an all-digit owner and repository name to GitHub as strings', async () => {
+		const numeric = makeRepo(history.slice(0, 1), {
+			now: NOW,
+			remote: 'https://github.com/1234/2048.git'
+		});
+		try {
+			const { exec, calls } = makeExec(numeric.dir, {
+				onGh: () => ({ ok: true, stdout: JSON.stringify(githubAnswer(NOW)) })
+			});
+			await ask(createPlugin({ now: () => NOW }), exec);
+			const gh = calls.find((a) => a[0] === 'gh');
+			const flagOf = (field) => gh[gh.indexOf(field) - 1];
+			assert.equal(flagOf('owner=1234'), '-f');
+			assert.equal(flagOf('name=2048'), '-f');
+		} finally {
+			numeric.cleanup();
+		}
+	});
+
 	it('shows the history alone, and says why, when the clone has no GitHub remote', async () => {
 		const { exec, calls } = makeExec(local.dir);
 		const r = await ask(createPlugin({ now: () => NOW }), exec);
