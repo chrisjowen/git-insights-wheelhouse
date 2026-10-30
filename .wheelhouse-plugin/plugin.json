@@ -1,0 +1,63 @@
+{
+	"$schema": "https://raw.githubusercontent.com/chrisjowen/wheelhouse/main/packages/plugin-sdk/plugin.schema.json",
+	"name": "git-insights",
+	"displayName": "Git insights",
+	"version": "0.1.0",
+	"description": "A project tab with who is working on the project, its latest commits, the files that change most, open pull requests and a few figures, from the clone's git history and GitHub, read again every hour.",
+	"author": { "name": "Chris Owen", "url": "https://github.com/chrisjowen" },
+	"repository": "https://github.com/chrisjowen/git-insights-wheelhouse",
+	"license": "MIT",
+	"keywords": ["git", "github", "insights"],
+	"wheelhouse": {
+		"apiVersion": 1,
+		"server": "wheelhouse/server/index.js",
+		"ui": "wheelhouse/ui/index.js",
+		"enabledByDefault": false,
+		"contributions": [{ "id": "insights", "slot": "project.tab" }],
+		"services": [],
+		"settings": {
+			"refreshMinutes": {
+				"title": "Read again every (minutes)",
+				"description": "How old the figures may get before the plugin reads the history and GitHub again: at least 5, at most 1440.",
+				"type": "number",
+				"default": 60
+			},
+			"defaultDays": {
+				"title": "Period shown first",
+				"description": "How far back people, hotspots and the figures look when the tab opens; the tab can switch.",
+				"default": "30",
+				"options": [
+					{ "value": "7", "label": "7 days" },
+					{ "value": "30", "label": "30 days" },
+					{ "value": "90", "label": "90 days" }
+				]
+			},
+			"hotspotIgnore": {
+				"title": "Files left out of hotspots",
+				"description": "File names (a * matches any part of a name), paths, or folders ending in /. Lock files are left out by default.",
+				"type": "list",
+				"default": [
+					"package-lock.json",
+					"npm-shrinkwrap.json",
+					"pnpm-lock.yaml",
+					"yarn.lock",
+					"bun.lockb",
+					"Cargo.lock",
+					"go.sum",
+					"poetry.lock",
+					"uv.lock",
+					"Gemfile.lock",
+					"composer.lock",
+					"mix.lock",
+					"Podfile.lock"
+				]
+			},
+			"includeBots": {
+				"title": "Count bots",
+				"description": "Whether bots such as Dependabot count in commits, contributors and the open pull request list. Merged pull request and issue counts always include them.",
+				"type": "boolean",
+				"default": true
+			}
+		}
+	}
+}
