@@ -54,12 +54,12 @@ The tab has no "Refresh now" button: Wheelhouse doesn't yet let a plugin's tab a
 
 Change these on the plugin's page in **Settings → Plugins**, or under `plugins["git-insights"].settings` in Wheelhouse's `plugins.json`. They apply without a restart.
 
-| Setting                    | Key              | Default    | What it does                                                                                                     |
-| -------------------------- | ---------------- | ---------- | ---------------------------------------------------------------------------------------------------------------- |
-| Read again every (minutes) | `refreshMinutes` | `60`       | How old the figures may get before the plugin reads again; at least 5, at most 1440.                             |
-| Period shown first         | `defaultDays`    | `30`       | How far back people, hotspots and the figures look when the tab opens (`7`, `30` or `90`); the tab can switch.   |
-| Files left out of hotspots | `hotspotIgnore`  | lock files | File names (`*` matches any part of a name), paths, or folders ending in `/`, such as `dist/` or `*.min.js`.     |
-| Count bots                 | `includeBots`    | `true`     | Whether commits and pull requests from bots such as Dependabot count.                                            |
+| Setting                    | Key              | Default    | What it does                                                                                                   |
+| -------------------------- | ---------------- | ---------- | -------------------------------------------------------------------------------------------------------------- |
+| Read again every (minutes) | `refreshMinutes` | `60`       | How old the figures may get before the plugin reads again; at least 5, at most 1440.                           |
+| Period shown first         | `defaultDays`    | `30`       | How far back people, hotspots and the figures look when the tab opens (`7`, `30` or `90`); the tab can switch. |
+| Files left out of hotspots | `hotspotIgnore`  | lock files | File names (`*` matches any part of a name), paths, or folders ending in `/`, such as `dist/` or `*.min.js`.   |
+| Count bots                 | `includeBots`    | `true`     | Whether commits and pull requests from bots such as Dependabot count.                                          |
 
 ## What it reads
 
