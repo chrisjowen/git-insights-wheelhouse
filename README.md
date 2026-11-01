@@ -2,6 +2,10 @@
 
 A [Wheelhouse](https://github.com/chrisjowen/wheelhouse) plugin that adds an **Insights** tab to each project, built from the project clone's git history and, when the clone's `origin` is on GitHub, from GitHub. It shows who is working on the project, its latest commits, the files that change most, open pull requests and a few figures. The data is read again every hour.
 
+![The Insights tab for a demo project: a summary sentence, a 7 / 30 / 90 days switch, figures for commits, pull requests, time to merge and issues, and the open pull requests with their review and checks state](docs/images/git-insights-overview.png)
+
+_The screenshots show a made-up demo project._
+
 ## Install
 
 ```sh
@@ -37,6 +41,14 @@ Every row opens in place for more:
 - a person's lines changed and recent commits;
 - a commit's files;
 - a hotspot's changes and the commits that touched it.
+
+![An open pull request opened in place, showing its author, age, size, review and checks state, the reviewers asked and a link to GitHub](docs/images/git-insights-pull-requests.png)
+
+![The People list with one person opened, showing their lines changed, the parts of the repository they worked in and their recent commits](docs/images/git-insights-people.png)
+
+![The Latest commits list on the default branch with one commit opened to show its files](docs/images/git-insights-commits.png)
+
+![Hotspots with one file opened to show how often it changed, who changes it and the commits that touched it, followed by the Also cards for the latest release, open issues, the last commit and new people](docs/images/git-insights-hotspots.png)
 
 Five rows show until you click **Show all**. The tab follows Wheelhouse's light and dark themes.
 
