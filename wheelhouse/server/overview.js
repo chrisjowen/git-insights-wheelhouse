@@ -13,6 +13,8 @@ import { PERIODS } from './collect.js';
 /** Wheelhouse refuses a value over 256 KiB; this leaves room for the rest of the entry. */
 export const VALUE_BUDGET = 240 * 1024;
 
+const DAY = 86_400_000;
+
 /** What GitHub said, when it said anything (now, or last time). */
 const githubOf = (s) => (s.github.state === 'ok' || s.github.state === 'stale' ? s.github : null);
 
@@ -46,6 +48,7 @@ export function projectFigures(s) {
 export function aggregate(snapshots) {
 	/** @type {Overview['totals']} */
 	const totals = {};
+	const newestAt = Math.max(...snapshots.map((s) => s.collectedAt));
 	for (const days of PERIODS) {
 		const names = new Set();
 		let unlisted = 0;
@@ -56,6 +59,7 @@ export function aggregate(snapshots) {
 		let filesChanged = 0;
 		const weekly = days > 31;
 		const counts = new Array(weekly ? Math.ceil(days / 7) : days).fill(0);
+		const width = weekly ? 7 * DAY : DAY;
 		/** @type {Overview['totals'][string]['github']} */
 		let github = null;
 
@@ -68,9 +72,11 @@ export function aggregate(snapshots) {
 			filesChanged += p.filesChanged;
 			for (const person of p.people) names.add(person.name);
 			unlisted += Math.max(0, p.authors - p.people.length);
-			// Each project's buckets end when it was read; snapshots are read within the hour of each other.
+			// Each project's buckets end when it was read, so older reads move back to line up with the newest.
+			const shift = Math.round((newestAt - s.collectedAt) / width);
 			p.cadence.counts.forEach((n, i) => {
-				if (i < counts.length) counts[i] += n;
+				const at = i - shift;
+				if (at >= 0 && at < counts.length) counts[at] += n;
 			});
 
 			const gh = githubOf(s);
@@ -125,7 +131,7 @@ function slim(detail) {
 	return { ...detail, periods, commits: detail.commits.map((c) => ({ ...c, files: [] })) };
 }
 
-const size = (v) => JSON.stringify(v).length;
+const size = (v) => Buffer.byteLength(JSON.stringify(v), 'utf8');
 
 /**
  * Keep the page's value within `budget`: the largest projects' detail first

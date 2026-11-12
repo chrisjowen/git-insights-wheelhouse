@@ -113,7 +113,7 @@ describe('the provider', () => {
 		assert.equal(v.githubAt, NOW);
 		assert.equal(r.view.periods[30].commits, 4);
 		assert.equal(r.view.openPrCount, 3);
-		assert.ok(JSON.stringify(r.page).length < 256 * 1024);
+		assert.ok(Buffer.byteLength(JSON.stringify(r.page), 'utf8') < 256 * 1024);
 	});
 
 	it('only reads: git log, shortlog and config lookups, and one GitHub query', async () => {
@@ -462,7 +462,7 @@ describe('the page across projects', () => {
 	it('keeps the page within what Wheelhouse will show by trimming the largest detail first', async () => {
 		const r = await askAll(createPlugin({ now: () => NOW }), execs());
 		const page = r.value;
-		const size = (v) => JSON.stringify(v).length;
+		const size = (v) => Buffer.byteLength(JSON.stringify(v), 'utf8');
 		const lumenBytes = size(page.projects[0].detail);
 		// Within the budget, nothing changes.
 		assert.deepEqual(fit(structuredClone(page), size(page)), page);
@@ -500,7 +500,7 @@ describe('the totals', () => {
 				people: people.map((name) => ({ name }))
 			};
 		}
-		return { github: { state: 'none' }, periods, ...extra };
+		return { github: { state: 'none' }, collectedAt: 0, periods, ...extra };
 	};
 
 	it('counts each person once, and those past a project’s listed people as their own', () => {
@@ -540,6 +540,45 @@ describe('the totals', () => {
 		});
 		assert.equal(t.projects, 3);
 		assert.equal(t.active, 2);
+	});
+
+	it('lines each project’s days up with the newest read before adding them', () => {
+		const DAY = 86_400_000;
+		const now = NOW;
+		const days = (counts) => {
+			const s = snap(['Maya'], 1, { collectedAt: now });
+			s.periods[7].cadence.counts = counts;
+			return s;
+		};
+		// The same commit, three days before now: read now it is in day 3 of 7; read two days
+		// ago it was in day 5 of 7 (today's bucket being the last).
+		const fresh = days([0, 0, 0, 1, 0, 0, 0]);
+		const old = { ...days([0, 0, 0, 0, 0, 1, 0]), collectedAt: now - 2 * DAY };
+		assert.deepEqual(aggregate([fresh, old])[7].cadence.counts, [0, 0, 0, 2, 0, 0, 0]);
+		// What an old read saw before the newest read's week starts falls off.
+		const oldest = { ...days([1, 0, 0, 0, 0, 0, 0]), collectedAt: now - 2 * DAY };
+		assert.deepEqual(aggregate([fresh, oldest])[7].cadence.counts, [0, 0, 0, 1, 0, 0, 0]);
+	});
+
+	it('measures the page in bytes, as Wheelhouse does', () => {
+		const subject = '修正'.repeat(200);
+		const value = {
+			totals: {},
+			projects: [
+				{
+					id: 'a',
+					state: 'ok',
+					trimmed: null,
+					detail: { periods: {}, commits: [{ subject, files: ['x'] }] }
+				}
+			]
+		};
+		const chars = JSON.stringify(value).length;
+		const bytes = Buffer.byteLength(JSON.stringify(value), 'utf8');
+		assert.ok(bytes > chars + 100);
+		const fitted = fit(structuredClone(value), chars + 10);
+		assert.notEqual(fitted.projects[0].trimmed, null);
+		assert.ok(Buffer.byteLength(JSON.stringify(fitted), 'utf8') <= chars + 10);
 	});
 
 	it('lists projects in the order given, read or not', () => {
