@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { createPlugin } from '../wheelhouse/server/index.js';
+import { aggregate, fit, overview } from '../wheelhouse/server/overview.js';
 import { githubAnswer, makeExec, makeRepo } from './helpers.js';
 
 const NOW = Date.now();
@@ -38,16 +39,33 @@ const history = [
 	}
 ];
 
-/** Ask the provider as Wheelhouse would, at `at`. */
-const ask = (plugin, exec, { at, settings = {}, id = 'lumen' } = {}) => {
-	const provider = plugin.providers[0];
-	return provider.fetch({
-		project: { id, path: '/unused' },
+/**
+ * Ask the provider as Wheelhouse asks for its menu page: about the whole fleet,
+ * with every project the plugin is on for, each command run in the clone of
+ * the project it names. `execs` is each project's exec, by id.
+ */
+const askAll = (plugin, execs, { settings = {} } = {}) => {
+	const calls = [];
+	const result = plugin.providers[0].fetch({
+		project: null,
+		task: null,
+		projects: Object.keys(execs).map((id) => ({ id, name: `The ${id}`, path: '/unused' })),
+		tasks: [],
 		settings,
-		exec,
-		signal: new AbortController().signal,
-		at
+		exec: (r) => {
+			calls.push(r.project);
+			return execs[r.project](r);
+		},
+		signal: new AbortController().signal
 	});
+	return result.then((r) => Object.assign(r, { calls }));
+};
+
+/** Ask about one project: `page` is the page's value, `view` the project on it and `value` its own insights. */
+const ask = async (plugin, exec, { settings = {}, id = 'lumen' } = {}) => {
+	const r = await askAll(plugin, { [id]: exec }, { settings });
+	const view = r.value.projects[0];
+	return { ...r, page: r.value, view, value: view.detail };
 };
 
 describe('the provider', () => {
@@ -68,10 +86,15 @@ describe('the provider', () => {
 		});
 		const r = await ask(createPlugin({ now: () => NOW }), exec);
 		assert.equal(r.available, true);
+		assert.equal(r.view.state, 'ok');
+		assert.deepEqual(
+			r.calls.filter((id) => id !== 'lumen'),
+			[]
+		);
 		const v = r.value;
 		assert.equal(v.schema, 'git-insights.v1');
-		assert.equal(v.refreshMinutes, 60);
-		assert.equal(v.defaultDays, 30);
+		assert.equal(r.page.refreshMinutes, 60);
+		assert.equal(r.page.defaultDays, 30);
 		assert.equal(v.refresh, null);
 		assert.deepEqual(v.repo, { name: 'acme/lumen', url: 'https://github.com/acme/lumen' });
 		assert.equal(v.branch, 'main');
@@ -88,7 +111,9 @@ describe('the provider', () => {
 		assert.equal(v.github.state, 'ok');
 		assert.equal(v.github.openPrs.length, 3);
 		assert.equal(v.githubAt, NOW);
-		assert.ok(JSON.stringify(v).length < 256 * 1024);
+		assert.equal(r.view.periods[30].commits, 4);
+		assert.equal(r.view.openPrCount, 3);
+		assert.ok(Buffer.byteLength(JSON.stringify(r.page), 'utf8') < 256 * 1024);
 	});
 
 	it('only reads: git log, shortlog and config lookups, and one GitHub query', async () => {
@@ -178,7 +203,7 @@ describe('the provider', () => {
 		});
 		const plugin = createPlugin({ now: () => at });
 		const settings = { refreshMinutes: 1 };
-		const first = await ask(plugin, exec, { settings });
+		const first = await askAll(plugin, { lumen: exec }, { settings });
 		assert.equal(first.value.refreshMinutes, 5);
 		const reads = calls.length;
 		at += 4 * MINUTE;
@@ -198,7 +223,11 @@ describe('the provider', () => {
 		const reads = calls.length;
 		const r = await ask(plugin, exec, { settings: { includeBots: false, defaultDays: '7' } });
 		assert.ok(calls.length > reads);
-		assert.equal(r.value.defaultDays, 7);
+		assert.equal(r.view.state, 'ok');
+		assert.equal(
+			(await askAll(plugin, { lumen: exec }, { settings: { defaultDays: '7' } })).value.defaultDays,
+			7
+		);
 		assert.ok(!r.value.periods[30].people.some((p) => p.bot));
 		assert.equal(r.value.github.openPrCount, 2);
 	});
@@ -264,7 +293,13 @@ describe('the provider', () => {
 	it('says plainly when the folder is not a git clone', async () => {
 		const { exec } = makeExec('/');
 		const r = await ask(createPlugin({ now: () => NOW }), exec);
-		assert.deepEqual(r, { available: false, reason: 'This project’s folder isn’t a git clone.' });
+		assert.equal(r.available, true);
+		assert.deepEqual(r.view, {
+			id: 'lumen',
+			name: 'The lumen',
+			state: 'failed',
+			reason: 'This project’s folder isn’t a git clone.'
+		});
 	});
 
 	it('says plainly when the clone has no commits', async () => {
@@ -272,7 +307,8 @@ describe('the provider', () => {
 		try {
 			const { exec } = makeExec(empty.dir);
 			const r = await ask(createPlugin({ now: () => NOW }), exec);
-			assert.deepEqual(r, { available: false, reason: 'This project’s clone has no commits yet.' });
+			assert.equal(r.view.state, 'failed');
+			assert.equal(r.view.reason, 'This project’s clone has no commits yet.');
 		} finally {
 			empty.cleanup();
 		}
@@ -287,5 +323,278 @@ describe('the provider', () => {
 		const r = await ask(createPlugin({ now: () => NOW }), exec);
 		assert.equal(r.value.branch, 'main');
 		assert.ok(calls.some((a) => a.includes('log') && a.includes('origin/main')));
+	});
+});
+
+describe('the page across projects', () => {
+	let repo;
+	let local;
+	before(() => {
+		repo = makeRepo(history, { now: NOW, remote: 'https://github.com/acme/lumen.git' });
+		local = makeRepo(history.slice(0, 3), { now: NOW });
+	});
+	after(() => {
+		repo.cleanup();
+		local.cleanup();
+	});
+
+	const execs = () => ({
+		lumen: makeExec(repo.dir, {
+			onGh: () => ({ ok: true, stdout: JSON.stringify(githubAnswer(NOW)) })
+		}).exec,
+		atlas: makeExec(local.dir).exec
+	});
+
+	it('reads each project in its own clone and adds them up', async () => {
+		const r = await askAll(createPlugin({ now: () => NOW }), execs());
+		assert.equal(r.available, true);
+		assert.equal(r.value.schema, 'git-insights-overview.v1');
+		assert.deepEqual(new Set(r.calls), new Set(['lumen', 'atlas']));
+		assert.deepEqual(
+			r.value.projects.map((p) => [p.id, p.name, p.state]),
+			[
+				['lumen', 'The lumen', 'ok'],
+				['atlas', 'The atlas', 'ok']
+			]
+		);
+		const [lumen, atlas] = r.value.projects;
+		assert.equal(lumen.periods[30].commits, 4);
+		assert.equal(atlas.periods[30].commits, 1);
+		assert.equal(atlas.openPrCount, null);
+		assert.equal(atlas.github, 'none');
+		assert.equal(lumen.github, 'ok');
+		assert.equal(atlas.detail.github.state, 'none');
+
+		const t = r.value.totals[30];
+		assert.equal(t.projects, 2);
+		assert.equal(t.active, 2);
+		assert.equal(t.commits, 5);
+		// Maya committed to both, and counts once.
+		assert.equal(t.people, 3);
+		assert.equal(
+			t.cadence.counts.reduce((a, b) => a + b, 0),
+			5
+		);
+		assert.equal(t.github.projects, 1);
+		assert.equal(t.github.openPrCount, 3);
+		assert.equal(t.github.merged, 3);
+		assert.equal(t.github.openIssues, 12);
+		assert.equal(r.value.totals[90].commits, 5 + 2);
+		assert.equal(r.source, 'the git history and GitHub');
+		assert.equal(r.observedAt, new Date(NOW).toISOString());
+	});
+
+	it('says why a project could not be read, shows the others, and waits before trying it again', async () => {
+		let at = NOW;
+		let broken = 0;
+		const fine = execs();
+		const plugin = createPlugin({ now: () => at });
+		const all = {
+			...fine,
+			atlas: () => {
+				broken += 1;
+				return Promise.resolve({
+					ok: false,
+					reason: 'exited with code 128',
+					stdout: '',
+					stderr: 'fatal: not a git repository'
+				});
+			}
+		};
+		const r = await askAll(plugin, all);
+		const atlas = r.value.projects.find((p) => p.id === 'atlas');
+		assert.deepEqual(atlas, {
+			id: 'atlas',
+			name: 'The atlas',
+			state: 'failed',
+			reason: 'This project’s folder isn’t a git clone.'
+		});
+		assert.equal(r.value.totals[30].projects, 1);
+		assert.equal(r.value.totals[30].commits, 4);
+		const tried = broken;
+		at += 2 * MINUTE;
+		await askAll(plugin, all);
+		assert.equal(broken, tried);
+		at += 4 * MINUTE;
+		await askAll(plugin, all);
+		assert.ok(broken > tried);
+	});
+
+	it('leaves projects it has no time for to the next ask', async () => {
+		let late = true;
+		// The first look at the clock starts the call; later looks find it nearly over.
+		let looks = 0;
+		const clock = () => (late && looks++ > 0 ? 7_000 : 0);
+		const plugin = createPlugin({ now: () => NOW, clock });
+		const r = await askAll(plugin, execs());
+		assert.deepEqual(
+			r.value.projects.map((p) => p.state),
+			['pending', 'pending']
+		);
+		assert.equal(r.value.oldestAt, null);
+		assert.equal(r.observedAt, null);
+		late = false;
+		const again = await askAll(plugin, execs());
+		assert.deepEqual(
+			again.value.projects.map((p) => p.state),
+			['ok', 'ok']
+		);
+	});
+
+	it('forgets a project the plugin is turned off for', async () => {
+		const plugin = createPlugin({ now: () => NOW });
+		const both = execs();
+		await askAll(plugin, both);
+		await askAll(plugin, { lumen: both.lumen });
+		const { calls } = await askAll(plugin, both);
+		assert.deepEqual(
+			calls.filter((id) => id === 'lumen'),
+			[]
+		);
+		assert.ok(calls.includes('atlas'));
+	});
+
+	it('is not available when the plugin is on for no project', async () => {
+		const r = await askAll(createPlugin({ now: () => NOW }), {});
+		assert.equal(r.available, false);
+	});
+
+	it('keeps the page within what Wheelhouse will show by trimming the largest detail first', async () => {
+		const r = await askAll(createPlugin({ now: () => NOW }), execs());
+		const page = r.value;
+		const size = (v) => Buffer.byteLength(JSON.stringify(v), 'utf8');
+		const lumenBytes = size(page.projects[0].detail);
+		// Within the budget, nothing changes.
+		assert.deepEqual(fit(structuredClone(page), size(page)), page);
+
+		// Just too big: the largest project loses what opens in place, and nothing else changes.
+		const some = fit(structuredClone(page), size(page) - 50);
+		assert.equal(some.projects[0].trimmed, 'some');
+		assert.equal(some.projects[1].trimmed, null);
+		assert.ok(some.projects[0].detail.commits.every((c) => c.files.length === 0));
+		assert.ok(some.projects[0].detail.periods[30].people.every((p) => p.recent.length === 0));
+		assert.ok(size(some) <= size(page) - 50);
+
+		// Far too big: detail goes, largest first, and the rows and totals stay.
+		const none = fit(structuredClone(page), size(page) - lumenBytes);
+		assert.equal(none.projects[0].trimmed, 'all');
+		assert.equal(none.projects[0].detail, null);
+		assert.equal(none.projects[0].periods[30].commits, 4);
+		assert.deepEqual(none.totals, page.totals);
+	});
+});
+
+describe('the totals', () => {
+	/** A snapshot with only what the totals read. */
+	const snap = (people, authors, extra = {}) => {
+		const periods = {};
+		for (const days of [7, 30, 90]) {
+			const buckets = days > 31 ? Math.ceil(days / 7) : days;
+			periods[days] = {
+				commits: people.length,
+				authors,
+				add: 10,
+				del: 2,
+				filesChanged: 3,
+				cadence: { unit: days > 31 ? 'week' : 'day', counts: new Array(buckets).fill(0) },
+				people: people.map((name) => ({ name }))
+			};
+		}
+		return { github: { state: 'none' }, collectedAt: 0, periods, ...extra };
+	};
+
+	it('counts each person once, and those past a project’s listed people as their own', () => {
+		const t = aggregate([snap(['Maya', 'Tom'], 2), snap(['Maya', 'Ines'], 20)])[30];
+		// Maya, Tom and Ines, plus the 18 the second project does not list.
+		assert.equal(t.people, 3 + 18);
+		assert.equal(t.add, 20);
+		assert.equal(t.filesChanged, 6);
+		assert.equal(t.github, null);
+	});
+
+	it('adds GitHub up only where GitHub was read, keeping what is unknown unknown', () => {
+		const gh = (openPrCount, openIssues, issuesOpened) => ({
+			github: {
+				state: 'stale',
+				openPrCount,
+				openIssues,
+				periods: {
+					7: { merged: 1, issuesOpened, issuesClosed: null },
+					30: { merged: 2, issuesOpened, issuesClosed: null },
+					90: { merged: 3, issuesOpened, issuesClosed: null }
+				}
+			}
+		});
+		const t = aggregate([
+			snap(['Maya'], 1, gh(4, null, null)),
+			snap(['Tom'], 1, gh(1, 7, 2)),
+			snap([], 0)
+		])[30];
+		assert.deepEqual(t.github, {
+			projects: 2,
+			openPrCount: 5,
+			merged: 4,
+			openIssues: 7,
+			issuesOpened: 2,
+			issuesClosed: null
+		});
+		assert.equal(t.projects, 3);
+		assert.equal(t.active, 2);
+	});
+
+	it('lines each project’s days up with the newest read before adding them', () => {
+		const DAY = 86_400_000;
+		const now = NOW;
+		const days = (counts) => {
+			const s = snap(['Maya'], 1, { collectedAt: now });
+			s.periods[7].cadence.counts = counts;
+			return s;
+		};
+		// The same commit, three days before now: read now it is in day 3 of 7; read two days
+		// ago it was in day 5 of 7 (today's bucket being the last).
+		const fresh = days([0, 0, 0, 1, 0, 0, 0]);
+		const old = { ...days([0, 0, 0, 0, 0, 1, 0]), collectedAt: now - 2 * DAY };
+		assert.deepEqual(aggregate([fresh, old])[7].cadence.counts, [0, 0, 0, 2, 0, 0, 0]);
+		// What an old read saw before the newest read's week starts falls off.
+		const oldest = { ...days([1, 0, 0, 0, 0, 0, 0]), collectedAt: now - 2 * DAY };
+		assert.deepEqual(aggregate([fresh, oldest])[7].cadence.counts, [0, 0, 0, 1, 0, 0, 0]);
+	});
+
+	it('measures the page in bytes, as Wheelhouse does', () => {
+		const subject = '修正'.repeat(200);
+		const value = {
+			totals: {},
+			projects: [
+				{
+					id: 'a',
+					state: 'ok',
+					trimmed: null,
+					detail: { periods: {}, commits: [{ subject, files: ['x'] }] }
+				}
+			]
+		};
+		const chars = JSON.stringify(value).length;
+		const bytes = Buffer.byteLength(JSON.stringify(value), 'utf8');
+		assert.ok(bytes > chars + 100);
+		const fitted = fit(structuredClone(value), chars + 10);
+		assert.notEqual(fitted.projects[0].trimmed, null);
+		assert.ok(Buffer.byteLength(JSON.stringify(fitted), 'utf8') <= chars + 10);
+	});
+
+	it('lists projects in the order given, read or not', () => {
+		const read = new Map([['b', { snapshot: null, failed: { at: NOW, reason: 'Nope.' } }]]);
+		const v = overview(
+			[
+				{ id: 'a', name: '' },
+				{ id: 'b', name: 'Bee' }
+			],
+			read,
+			{ refreshMinutes: 60, defaultDays: 30 }
+		);
+		assert.deepEqual(v.projects, [
+			{ id: 'a', name: 'a', state: 'pending' },
+			{ id: 'b', name: 'Bee', state: 'failed', reason: 'Nope.' }
+		]);
+		assert.equal(v.totals[30].projects, 0);
 	});
 });
