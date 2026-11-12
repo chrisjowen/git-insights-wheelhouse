@@ -3,7 +3,7 @@
  * `origin` is on GitHub, one GraphQL query through `gh`. Everything here goes
  * through the provider context's `exec` (an argument array, no shell, bounded
  * time and output), reads only, and turns what it reads into one plain-JSON
- * snapshot the tab draws. The parsing and counting are pure functions, exported
+ * snapshot the page draws. The parsing and counting are pure functions, exported
  * for the tests.
  *
  * @typedef {import('./types.js').Snapshot} Snapshot
@@ -306,7 +306,7 @@ const safeUrl = (u) => (typeof u === 'string' && /^https:\/\/github\.com\//.test
 const personName = (a) => clean(a?.name || a?.login || 'Someone', 100);
 
 /**
- * The tab's GitHub part from the GraphQL answer: open pull requests (waiting
+ * A project's GitHub part from the GraphQL answer: open pull requests (waiting
  * longest first) with their review and checks state, merged counts and the
  * median time to merge per period, issues and releases.
  *

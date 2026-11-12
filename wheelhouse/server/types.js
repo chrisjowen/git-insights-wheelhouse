@@ -37,9 +37,27 @@
  *   github: GitHubPart | (GitHubData & { state: 'stale'; reason: string });
  *   githubAt: number | null }} Snapshot
  *
- * What the tab is handed: the snapshot, and how it is kept.
- * @typedef {Snapshot & { refreshMinutes: number; defaultDays: number;
- *   refresh: { failedAt: number; reason: string } | null }} TabData
+ * One project's insights as the page shows them: its snapshot, and why its last re-read failed, if it did.
+ * @typedef {Snapshot & { refresh: { at: number; reason: string } | null }} Detail
+ *
+ * A project on the page: read (with its row's figures and its detail, which may be trimmed to keep
+ * the page within Wheelhouse's size limit), never read successfully (with why), or not read yet.
+ * @typedef {{ id: string; name: string } & (
+ *   | { state: 'ok'; repo: Snapshot['repo']; collectedAt: number; lastCommitAt: number | null;
+ *       periods: Record<string, { commits: number; authors: number; merged: number | null }>;
+ *       github: Snapshot['github']['state']; openPrCount: number | null; detail: Detail | null; trimmed: null | 'some' | 'all' }
+ *   | { state: 'failed'; reason: string }
+ *   | { state: 'pending' })} ProjectView
+ *
+ * The totals across the projects read, for one period.
+ * @typedef {{ days: number; projects: number; active: number; commits: number; people: number;
+ *   add: number; del: number; filesChanged: number; cadence: { unit: 'day' | 'week'; counts: number[] };
+ *   github: { projects: number; openPrCount: number; merged: number; openIssues: number | null;
+ *     issuesOpened: number | null; issuesClosed: number | null } | null }} Totals
+ *
+ * What the page is handed.
+ * @typedef {{ schema: 'git-insights-overview.v1'; refreshMinutes: number; defaultDays: number;
+ *   oldestAt: number | null; totals: Record<string, Totals>; projects: ProjectView[] }} Overview
  */
 
 export {};

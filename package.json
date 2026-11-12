@@ -1,8 +1,8 @@
 {
 	"name": "git-insights-wheelhouse",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"private": true,
-	"description": "Wheelhouse plugin: a project tab with git and GitHub insights, read again every hour.",
+	"description": "Wheelhouse plugin: a menu page with git and GitHub insights across projects, read again every hour.",
 	"license": "MIT",
 	"author": "Chris Owen",
 	"repository": "github:chrisjowen/git-insights-wheelhouse",

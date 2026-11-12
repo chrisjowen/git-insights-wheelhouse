@@ -73,10 +73,18 @@
 									"bridge.card",
 									"home.card",
 									"header.indicator",
-									"nav.page"
+									"nav.page",
+									"preview.action"
 								]
+							},
+							"icon": {
+								"description": "A nav.page only: its icon in the menu, an image file inside the plugin. An SVG is drawn in the menu's own ink; a PNG, WebP or ICO in its own colours.",
+								"type": "string",
+								"pattern": "\\.([Ss][Vv][Gg]|[Pp][Nn][Gg]|[Ww][Ee][Bb][Pp]|[Ii][Cc][Oo])$"
 							}
-						}
+						},
+						"if": { "not": { "properties": { "slot": { "const": "nav.page" } } } },
+						"then": { "not": { "required": ["icon"] } }
 					}
 				},
 				"services": {
@@ -148,6 +156,48 @@
 							"service": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$" }
 						}
 					}
+				},
+				"addressRewrites": {
+					"type": "array",
+					"description": "While the plugin is on, Wheelhouse shows every http address on 127.0.0.1 or localhost at this host template (the first one, if several plugins have one), on the viewer's own Wheelhouse port.",
+					"items": {
+						"type": "object",
+						"additionalProperties": false,
+						"required": ["id", "to"],
+						"properties": {
+							"id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$" },
+							"to": {
+								"type": "string",
+								"maxLength": 100,
+								"pattern": "^[a-z0-9-]*\\{port\\}[a-z0-9-]*(\\.[a-z0-9-]+)*\\.localhost$",
+								"description": "A host template, such as {port}.localhost."
+							}
+						}
+					}
+				},
+				"hostRoutes": {
+					"type": "array",
+					"description": "*.localhost host templates whose requests, while the plugin is on, go to the server entry's host route of the same id.",
+					"items": {
+						"type": "object",
+						"additionalProperties": false,
+						"required": ["id", "host"],
+						"properties": {
+							"id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$" },
+							"host": {
+								"type": "string",
+								"maxLength": 100,
+								"pattern": "^[a-z0-9-]*\\{port\\}[a-z0-9-]*(\\.[a-z0-9-]+)*\\.localhost$",
+								"description": "A host template, such as {port}.localhost."
+							}
+						}
+					}
+				},
+				"capabilities": {
+					"type": "array",
+					"description": "What the plugin may do beyond reading, shown before it is installed. feedback: its elements may send Firstmate a feedback list about one task (host.sendFeedback), each on the captain's click.",
+					"uniqueItems": true,
+					"items": { "enum": ["feedback"] }
 				}
 			}
 		}

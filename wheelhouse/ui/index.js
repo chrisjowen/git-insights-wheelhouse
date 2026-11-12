@@ -1,13 +1,17 @@
 /**
- * The Insights tab as a custom element. Wheelhouse imports this bundle, then
- * sets the provider's snapshot on the element as `data` each time it changes.
- * One calm column: a sentence that sums the period up, four figures, then open
- * pull requests, people, latest commits and hotspots, each row opening in
- * place for more. It builds its DOM with textContent only, keeps links to
- * http(s), and styles itself with Wheelhouse's CSS variables, so it follows the
- * light and dark themes.
+ * The Git insights page as a custom element, for Wheelhouse's left-hand menu.
+ * Wheelhouse imports this bundle, then sets the provider's value on the
+ * element as `data` each time it changes. The page opens on the figures across
+ * every project, with a row for each that opens the project's own insights
+ * (`#project=<id>`): one calm column with a sentence that sums the period up,
+ * four figures, then open pull requests, people, latest commits and hotspots,
+ * each row opening in place for more. It builds its DOM with textContent only,
+ * keeps outside links to http(s), and styles itself with Wheelhouse's CSS
+ * variables, so it follows the light and dark themes.
  *
- * @typedef {import('../server/types.js').TabData} TabData
+ * @typedef {import('../server/types.js').Overview} Overview
+ * @typedef {import('../server/types.js').ProjectView} ProjectView
+ * @typedef {import('../server/types.js').Detail} Detail
  */
 
 const PERIODS = [7, 30, 90];
@@ -15,10 +19,8 @@ const ROWS = 5;
 const TONES = 6;
 
 const STYLE = `
-:host { display: block; flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: none; container-type: inline-size; color: var(--foreground); font: inherit; font-size: 0.875rem; line-height: 1.5; }
-:host::-webkit-scrollbar { display: none; }
-.gi { max-width: 72rem; padding: 1.5rem 1.5rem 3rem; }
-@container (max-width: 640px) { .gi { padding: 1rem 1rem 2.5rem; } }
+:host { display: block; container-type: inline-size; color: var(--foreground); font: inherit; font-size: 0.875rem; line-height: 1.5; }
+.gi { max-width: 72rem; }
 * { box-sizing: border-box; }
 a { color: var(--sea); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -42,7 +44,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .note { border: 1px solid var(--border); border-left: 3px solid var(--brass); background: var(--panel, var(--card)); border-radius: var(--radius); padding: 0.625rem 0.875rem; font-size: 0.8125rem; color: var(--muted-foreground); margin-bottom: 1.25rem; }
 .note strong { color: var(--foreground); font-weight: 500; }
 
-.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); margin-bottom: 1.75rem; }
+.stats { display: grid; grid-template-columns: repeat(var(--cells, 4), minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); margin-bottom: 1.75rem; }
 .stat { padding: 0.875rem 1rem; border-left: 1px solid var(--border); min-width: 0; }
 .stat:first-child { border-left: 0; }
 .k { font-size: 0.6875rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-foreground); }
@@ -110,6 +112,17 @@ section { margin-bottom: 2rem; }
 	.wide { display: none; }
 }
 
+.back { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.8125rem; margin-bottom: 0.75rem; }
+.back svg { width: 14px; height: 14px; transform: rotate(180deg); }
+.title { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.title h2 { font-family: var(--font-display); font-weight: 400; font-size: 1.5rem; margin: 0; }
+.title span { font-size: 0.8125rem; }
+.g-project { all: unset; box-sizing: border-box; width: 100%; display: grid; align-items: center; gap: 0.75rem; padding: 0.625rem 0.25rem; border-radius: 4px; grid-template-columns: minmax(0, 1fr) 6.5rem 6rem 6.5rem 7rem 14px; }
+a.g-project { cursor: pointer; color: inherit; }
+a.g-project:hover { background: var(--accent); text-decoration: none; }
+a.g-project:focus-visible { outline: 2px solid var(--ring, var(--sea)); outline-offset: 1px; }
+.g-project .name { color: var(--sea); }
+@container (max-width: 720px) { .g-project { grid-template-columns: minmax(0, 1fr) 5.5rem 14px; } }
 .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
 .fact { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 0.875rem; min-width: 0; }
 .fact .v { font-size: 0.9375rem; margin-top: 2px; }
@@ -292,22 +305,41 @@ const CHECK_TONE = { passing: 'good', failing: 'bad', running: 'wait', none: '' 
 const pill = (cls, text) =>
 	h('span', { class: `pill ${cls}` }, h('i', { 'aria-hidden': 'true' }), text);
 
-class GitInsightsTab extends HTMLElement {
-	/** @type {TabData | null} */
+/** The project a `#project=<id>` address names, or null for the page's overview. */
+export function projectFromHash(hash) {
+	return new URLSearchParams(String(hash ?? '').replace(/^#/, '')).get('project') || null;
+}
+
+const projectHref = (id) => `#project=${encodeURIComponent(id)}`;
+
+class GitInsightsPage extends HTMLElement {
+	/** @type {Overview | null} */
 	#data = null;
 	#period = null;
+	/** The project shown, from the address's `#project=<id>`; null for the overview. */
+	#project = null;
 	#open = new Set();
 	#all = new Set();
 	#timer = null;
+	#onHash = () => {
+		const project = projectFromHash(window.location.hash);
+		if (project === this.#project) return;
+		this.#project = project;
+		this.render();
+		if (this.getBoundingClientRect().top < 0) this.scrollIntoView({ block: 'start' });
+	};
 
 	constructor() {
 		super();
 		this.attachShadow({ mode: 'open' });
 	}
 
-	/** @param {TabData} value */
+	/** @param {Overview} value */
 	set data(value) {
-		this.#data = value && value.schema === 'git-insights.v1' ? value : null;
+		this.#data =
+			value && value.schema === 'git-insights-overview.v1' && Array.isArray(value.projects)
+				? value
+				: null;
 		this.render();
 	}
 
@@ -316,19 +348,25 @@ class GitInsightsTab extends HTMLElement {
 	}
 
 	connectedCallback() {
+		this.#project = projectFromHash(window.location.hash);
+		window.addEventListener('hashchange', this.#onHash);
 		this.render();
-		// Keeps "Updated … ago" true while the tab stays open.
+		// Keeps "Updated … ago" true while the page stays open.
 		this.#timer = setInterval(() => this.#tick(), 60_000);
 	}
 
 	disconnectedCallback() {
+		window.removeEventListener('hashchange', this.#onHash);
 		clearInterval(this.#timer);
 		this.#timer = null;
 	}
 
 	#tick() {
 		const el = this.shadowRoot?.querySelector('[data-updated]');
-		if (el && this.#data) el.textContent = this.#updated(this.#data, Date.now());
+		if (el && this.#data) {
+			const at = Number(el.getAttribute('data-updated')) || null;
+			el.textContent = this.#updated(at, this.#data.refreshMinutes, Date.now());
+		}
 	}
 
 	get #days() {
@@ -345,13 +383,202 @@ class GitInsightsTab extends HTMLElement {
 			return;
 		}
 		const now = Date.now();
+		const body = this.#project
+			? this.#projectPage(
+					d,
+					d.projects.find((p) => p.id === this.#project),
+					now
+				)
+			: this.#overview(d, now);
+		this.shadowRoot.replaceChildren(style, h('div', { class: 'gi' }, body));
+	}
+
+	// --- the overview: every project together ---
+
+	#overview(d, now) {
+		const t = d.totals[this.#days];
+		return [
+			h(
+				'div',
+				{ class: 'top' },
+				this.#overallPulse(t),
+				this.#meta(d.oldestAt, d.refreshMinutes, now)
+			),
+			t.projects ? this.#overallStats(t) : null,
+			this.#section(
+				'Projects',
+				'each opens its own insights',
+				this.#projectRows(d.projects, now),
+				'Git insights isn’t on for any project yet.'
+			)
+		];
+	}
+
+	#overallPulse(t) {
+		const span = `in the last ${this.#days} days`;
+		if (!t.projects) return h('p', { class: 'pulse' }, 'No project has been read yet.');
+		if (!t.commits) {
+			return h('p', { class: 'pulse' }, `No commits in ${plural(t.projects, 'project')} ${span}.`);
+		}
+		const gh = t.github;
+		return h(
+			'p',
+			{ class: 'pulse' },
+			h('em', {}, plural(t.commits, 'commit')),
+			` from ${plural(t.people, 'person', 'people')} across ${plural(t.active, 'project')} ${span}`,
+			gh
+				? [
+						', ',
+						h('em', {}, `${plural(gh.merged, 'pull request')} merged`),
+						` and ${gh.openPrCount.toLocaleString('en')} open`
+					]
+				: null,
+			'.'
+		);
+	}
+
+	#overallStats(t) {
+		const cells = [
+			{
+				k: 'Commits',
+				v: short(t.commits),
+				s: plural(t.people, 'person', 'people'),
+				chart: bars(t.cadence.counts, `Commits per ${t.cadence.unit}`)
+			}
+		];
+		const gh = t.github;
+		if (gh) {
+			const issues =
+				gh.issuesOpened === null
+					? 'open'
+					: `open · ${gh.issuesOpened.toLocaleString('en')} new, ${(gh.issuesClosed ?? 0).toLocaleString('en')} closed`;
+			cells.push(
+				{
+					k: 'Pull requests',
+					v: short(gh.openPrCount),
+					s: `open · ${gh.merged.toLocaleString('en')} merged`
+				},
+				{ k: 'Issues', v: gh.openIssues === null ? '—' : short(gh.openIssues), s: issues }
+			);
+		} else {
+			cells.push({
+				k: 'Files changed',
+				v: short(t.filesChanged),
+				s: `in the last ${this.#days} days`
+			});
+		}
+		cells.push({ k: 'Lines', v: `+${short(t.add)}`, s: `−${short(t.del)} removed` });
+		return this.#cells(cells);
+	}
+
+	/** A row for each project: the busiest in the period first, then those not read. */
+	#projectRows(projects, now) {
+		if (!projects.length) return null;
+		const days = this.#days;
+		const commits = (p) => (p.state === 'ok' ? (p.periods[days]?.commits ?? 0) : -1);
+		const sorted = [...projects].sort(
+			(a, b) => commits(b) - commits(a) || a.name.localeCompare(b.name)
+		);
+		return h(
+			'div',
+			{ class: 'list' },
+			sorted.map((p) => h('div', { class: 'row' }, this.#projectRow(p, now)))
+		);
+	}
+
+	#projectRow(p, now) {
+		const name = h(
+			'span',
+			{ class: 'ell' },
+			h('span', { class: 'name' }, p.name),
+			p.state === 'ok' && p.repo ? h('span', { class: 'dim small' }, ' ', p.repo.name) : null
+		);
+		if (p.state !== 'ok') {
+			const why =
+				p.state === 'failed'
+					? p.reason || 'Its history couldn’t be read.'
+					: 'Not read yet; it will be in a minute or so.';
+			return h(
+				'div',
+				{ class: 'g-project' },
+				name,
+				h('span', { class: 'dim small', style: 'grid-column: 2 / -1' }, why)
+			);
+		}
+		const f = p.periods[this.#days] ?? { commits: 0, authors: 0 };
+		const count = (n, one, many) =>
+			h(
+				'span',
+				{ class: 'num' },
+				n.toLocaleString('en'),
+				h('span', { class: 'dim small' }, ` ${n === 1 ? one : many}`)
+			);
+		return h(
+			'a',
+			{ class: 'g-project', href: projectHref(p.id) },
+			name,
+			count(f.commits, 'commit', 'commits'),
+			h('span', { class: 'wide' }, count(f.authors, 'person', 'people')),
+			h(
+				'span',
+				{ class: 'wide' },
+				p.openPrCount === null
+					? h('span', { class: 'dim small' }, p.github === 'none' ? 'no GitHub' : 'GitHub not read')
+					: count(p.openPrCount, 'open PR', 'open PRs')
+			),
+			h(
+				'span',
+				{ class: 'dim small right wide' },
+				p.lastCommitAt ? `last ${ago(p.lastCommitAt, now)}` : 'no commits'
+			),
+			chevron()
+		);
+	}
+
+	// --- one project's own insights ---
+
+	#projectPage(d, p, now) {
+		const back = h('a', { class: 'back', href: '#' }, chevron(), 'All projects');
+		if (!p) {
+			return [
+				back,
+				h(
+					'p',
+					{ class: 'empty' },
+					'Git insights has no such project. It may have been turned off for it.'
+				)
+			];
+		}
+		const title = h(
+			'div',
+			{ class: 'title' },
+			h('h2', {}, p.name),
+			p.state === 'ok' && p.repo ? link(p.repo.url, p.repo.name, 'small') : null
+		);
+		if (p.state !== 'ok' || !p.detail) {
+			const why =
+				p.state === 'failed'
+					? p.reason || 'Its history couldn’t be read.'
+					: p.state === 'pending'
+						? 'It hasn’t been read yet; it will be in a minute or so.'
+						: 'There are too many projects to show this one’s detail here; its figures are on the overview.';
+			return [back, title, h('p', { class: 'empty' }, why)];
+		}
+		return [back, title, this.#insights(p.detail, d.refreshMinutes, p.trimmed, now)];
+	}
+
+	/** @param {Detail} d */
+	#insights(d, refreshMinutes, trimmed, now) {
 		const period = d.periods[this.#days];
 		const gh = d.github.state === 'ok' || d.github.state === 'stale' ? d.github : null;
-		const root = h(
-			'div',
-			{ class: 'gi' },
-			h('div', { class: 'top' }, this.#pulse(period, gh), this.#meta(d, now)),
-			this.#notes(d, now),
+		return [
+			h(
+				'div',
+				{ class: 'top' },
+				this.#pulse(period, gh),
+				this.#meta(d.collectedAt, refreshMinutes, now)
+			),
+			this.#notes(d, trimmed, now),
 			this.#stats(period, gh),
 			gh
 				? this.#section(
@@ -380,8 +607,7 @@ class GitInsightsTab extends HTMLElement {
 				`No files changed in the last ${this.#days} days.`
 			),
 			this.#facts(d, period, gh, now)
-		);
-		this.shadowRoot.replaceChildren(style, root);
+		];
 	}
 
 	#pulse(p, gh) {
@@ -404,11 +630,13 @@ class GitInsightsTab extends HTMLElement {
 		);
 	}
 
-	#updated(d, now) {
-		return `Updated ${ago(d.collectedAt, now)} · reads again ${every(d.refreshMinutes)}`;
+	// --- shared parts ---
+
+	#updated(at, refreshMinutes, now) {
+		return `${at ? `Updated ${ago(at, now)}` : 'Not read yet'} · reads again ${every(refreshMinutes)}`;
 	}
 
-	#meta(d, now) {
+	#meta(at, refreshMinutes, now) {
 		const seg = h(
 			'div',
 			{ class: 'seg', role: 'group', 'aria-label': 'Period' },
@@ -431,11 +659,11 @@ class GitInsightsTab extends HTMLElement {
 			'div',
 			{ class: 'meta' },
 			seg,
-			h('span', { 'data-updated': '' }, this.#updated(d, now))
+			h('span', { 'data-updated': at ?? '' }, this.#updated(at, refreshMinutes, now))
 		);
 	}
 
-	#notes(d, now) {
+	#notes(d, trimmed, now) {
 		const notes = [];
 		if (d.refresh) {
 			notes.push(
@@ -444,6 +672,16 @@ class GitInsightsTab extends HTMLElement {
 					{ class: 'note', role: 'status' },
 					h('strong', {}, 'Couldn’t read it again just now. '),
 					`${d.refresh.reason} This is what it read ${ago(d.collectedAt, now)}; it will try again in a few minutes.`
+				)
+			);
+		}
+		if (trimmed) {
+			notes.push(
+				h(
+					'div',
+					{ class: 'note' },
+					h('strong', {}, 'Some detail is left out. '),
+					'With this many projects, rows here don’t list their recent commits or files, so the page stays quick to load.'
 				)
 			);
 		}
@@ -476,6 +714,24 @@ class GitInsightsTab extends HTMLElement {
 			);
 		}
 		return notes;
+	}
+
+	/** Figures side by side, each with a name, a value, a line under it and, optionally, a chart. */
+	#cells(cells) {
+		return h(
+			'div',
+			{ class: 'stats', style: `--cells: ${cells.length}` },
+			cells.map((c) =>
+				h(
+					'div',
+					{ class: 'stat' },
+					h('div', { class: 'k' }, c.k),
+					h('div', { class: 'v num' }, c.v),
+					h('div', { class: 's' }, c.s),
+					c.chart ?? null
+				)
+			)
+		);
 	}
 
 	#stats(p, gh) {
@@ -522,20 +778,7 @@ class GitInsightsTab extends HTMLElement {
 				}
 			);
 		}
-		return h(
-			'div',
-			{ class: 'stats' },
-			cells.map((c) =>
-				h(
-					'div',
-					{ class: 'stat' },
-					h('div', { class: 'k' }, c.k),
-					h('div', { class: 'v num' }, c.v),
-					h('div', { class: 's' }, c.s),
-					c.chart ?? null
-				)
-			)
-		);
+		return this.#cells(cells);
 	}
 
 	#section(title, sub, body, empty) {
@@ -550,13 +793,14 @@ class GitInsightsTab extends HTMLElement {
 	/** A list of rows that open in place, five shown until "Show all". */
 	#list(name, items, key, row) {
 		if (!items.length) return null;
-		const all = this.#all.has(name);
+		const shownKey = `${this.#project}:${name}`;
+		const all = this.#all.has(shownKey);
 		const shown = all ? items : items.slice(0, ROWS);
 		const list = h(
 			'div',
 			{ class: 'list' },
 			shown.map((item) => {
-				const id = `${name}:${key(item)}`;
+				const id = `${this.#project}:${name}:${key(item)}`;
 				const [cls, head, detail] = row(item);
 				const open = this.#open.has(id);
 				const el = h('div', { class: `row${open ? ' open' : ''}` });
@@ -588,7 +832,7 @@ class GitInsightsTab extends HTMLElement {
 							type: 'button',
 							class: 'more',
 							onclick: () => {
-								this.#all.add(name);
+								this.#all.add(shownKey);
 								this.render();
 							}
 						},
@@ -861,5 +1105,5 @@ class GitInsightsTab extends HTMLElement {
 	}
 }
 
-if (!customElements.get('git-insights-tab'))
-	customElements.define('git-insights-tab', GitInsightsTab);
+if (!customElements.get('git-insights-page'))
+	customElements.define('git-insights-page', GitInsightsPage);

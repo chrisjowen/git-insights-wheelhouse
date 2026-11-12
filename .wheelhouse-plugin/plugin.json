@@ -2,8 +2,8 @@
 	"$schema": "https://raw.githubusercontent.com/chrisjowen/wheelhouse/main/packages/plugin-sdk/plugin.schema.json",
 	"name": "git-insights",
 	"displayName": "Git insights",
-	"version": "0.1.0",
-	"description": "A project tab with who is working on the project, its latest commits, the files that change most, open pull requests and a few figures, from the clone's git history and GitHub, read again every hour.",
+	"version": "0.2.0",
+	"description": "A Git insights page in the menu with figures across every project, and each project's own: who is working on it, its latest commits, the files that change most and open pull requests, from its clone's git history and GitHub, read again every hour.",
 	"author": { "name": "Chris Owen", "url": "https://github.com/chrisjowen" },
 	"repository": "https://github.com/chrisjowen/git-insights-wheelhouse",
 	"license": "MIT",
@@ -13,7 +13,7 @@
 		"server": "wheelhouse/server/index.js",
 		"ui": "wheelhouse/ui/index.js",
 		"enabledByDefault": false,
-		"contributions": [{ "id": "insights", "slot": "project.tab" }],
+		"contributions": [{ "id": "insights", "slot": "nav.page", "icon": "wheelhouse/icon.svg" }],
 		"services": [],
 		"settings": {
 			"refreshMinutes": {
@@ -24,7 +24,7 @@
 			},
 			"defaultDays": {
 				"title": "Period shown first",
-				"description": "How far back people, hotspots and the figures look when the tab opens; the tab can switch.",
+				"description": "How far back people, hotspots and the figures look when the page opens; the page can switch.",
 				"default": "30",
 				"options": [
 					{ "value": "7", "label": "7 days" },

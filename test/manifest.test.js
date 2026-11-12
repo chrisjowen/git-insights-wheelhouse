@@ -25,7 +25,7 @@ describe('the manifest', () => {
 	it('lists exactly what the server entry contributes', () => {
 		assert.deepEqual(
 			plugin.contributions.map((c) => ({ id: c.id, slot: c.slot })),
-			manifest.wheelhouse.contributions
+			manifest.wheelhouse.contributions.map((c) => ({ id: c.id, slot: c.slot }))
 		);
 		assert.deepEqual(manifest.wheelhouse.services, []);
 		for (const c of plugin.contributions) {
@@ -35,9 +35,19 @@ describe('the manifest', () => {
 		}
 	});
 
+	it('is a page in the menu, with its icon, and no longer a tab on the project page', () => {
+		assert.deepEqual(manifest.wheelhouse.contributions, [
+			{ id: 'insights', slot: 'nav.page', icon: 'wheelhouse/icon.svg' }
+		]);
+		assert.ok(!plugin.contributions.some((c) => c.slot === 'project.tab'));
+		const icon = readFileSync(new URL('../wheelhouse/icon.svg', import.meta.url), 'utf8');
+		assert.match(icon, /^<svg [^>]*viewBox="0 0 24 24"/);
+	});
+
 	it('stays within the provider limits Wheelhouse allows', () => {
 		for (const p of plugin.providers) {
-			assert.equal(p.scope, 'project');
+			// A nav.page is about the whole fleet, so its provider is too.
+			assert.equal(p.scope, 'fleet');
 			assert.ok(p.timeoutMs <= 10_000);
 		}
 	});
